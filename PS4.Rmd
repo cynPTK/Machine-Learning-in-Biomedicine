@@ -1,0 +1,144 @@
+---
+title: "PS4"
+author: "Cynthia Nguyen"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+data = read_tsv("C:/Users/WINDOWS/Desktop/DSB 205/ps4.data/data/Q1/Q1.data")
+
+# Assuming data_matrix is Mx(N+1), where the last column contains the phenotypes
+genotype_matrix <- as.matrix(data[, -ncol(data)])  # Genotype matrix (M x N)
+phenotype <- data[, ncol(data)]         # Phenotype vector (N)
+phenotype <- as.numeric(unlist(phenotype))
+```
+```{r}
+print(length(phenotype))  # Should be 1000
+print(dim(genotype_matrix))  # Should be 2000 x 1000
+
+```
+
+
+```{r}
+# Initialize a vector to store p-values
+N <- length(phenotype)  # Number of individuals (1000)
+M <- ncol(genotype_matrix)  # Number of SNPs (2000)
+p_values <- numeric(M)
+
+# Loop over each SNP (columns) to run the linear regression
+for (i in 1:M) {
+  # Perform linear regression for the i-th SNP (using the i-th column of the matrix)
+  model <- lm(phenotype ~ genotype_matrix[, i])
+  
+  # Extract p-value for the SNP from the model
+  p_values[i] <- summary(model)$coefficients[2, 4]  # The p-value of the SNP coefficient
+}
+
+# Create QQ plot
+qqplot(-log10(ppoints(M)), -log10(sort(p_values)), 
+       main = "QQ Plot of p-values", 
+       xlab = "Expected -log10(p)", 
+       ylab = "Observed -log10(p)")
+abline(0, 1, col = "red")
+
+# Apply Bonferroni correction
+bonferroni_threshold <- 0.05 / M
+significant_snps <- sum(p_values < bonferroni_threshold)
+
+# Output the number of significant SNPs
+significant_snps
+```
+```{r}
+# Perform PCA on the genotype matrix
+pca_result <- prcomp(genotype_matrix, center = TRUE, scale. = TRUE)
+
+# Summary of PCA to check variance explained by the first few components
+summary(pca_result)
+
+# Plot PC1 against PC2
+plot(pca_result$x[, 1], pca_result$x[, 2],
+     xlab = "PC1", ylab = "PC2", 
+     main = "PCA: PC1 vs PC2",
+     pch = 16, col = "blue")
+
+```
+```{r}
+# Perform PCA on the genotype matrix
+pca_result <- prcomp(genotype_matrix, center = TRUE, scale. = TRUE)
+
+# Extract PC1
+pc1 <- pca_result$x[, 1]
+
+# Initialize a vector to store p-values
+p_values_with_pc1 <- numeric(M)
+
+# Loop over each SNP (columns) to run the linear regression with PC1 as a covariate
+for (i in 1:M) {
+  # Perform linear regression for the i-th SNP, including PC1 as a covariate
+  model <- lm(phenotype ~ genotype_matrix[, i] + pc1)
+  
+  # Extract p-value for the SNP from the model
+  p_values_with_pc1[i] <- summary(model)$coefficients[2, 4]  # The p-value of the SNP coefficient
+}
+
+```
+
+```{r}
+# Create QQ plot of p-values
+qqplot(-log10(ppoints(M)), -log10(sort(p_values_with_pc1)), 
+       main = "QQ Plot of p-values (with PC1 adjustment)", 
+       xlab = "Expected -log10(p)", 
+       ylab = "Observed -log10(p)")
+abline(0, 1, col = "red")
+
+# Apply Bonferroni correction
+bonferroni_threshold <- 0.05 / M
+significant_snps_with_pc1 <- sum(p_values_with_pc1 < bonferroni_threshold)
+
+# Output the number of significant SNPs
+significant_snps_with_pc1
+
+```
+P2
+
+```{r}
+# Load the data
+data <- read.table("C:/Users/WINDOWS/Desktop/DSB 205/ps4.data/data/Q2/Q2.data", header = FALSE)
+
+# Assuming the columns represent the populations in the order (X3, X4, X5):
+# X3 (Asian) is in the first column, X4 (African) is in the second column, X5 (European) is in the third column
+X3 <- data$V1  # Asian population (X3)
+X4 <- data$V2  # African population (X4)
+X5 <- data$V3  # European population (X5)
+```
+
+```{r}
+# Calculate the statistic d_hat
+m <- nrow(data)  # number of SNPs
+d_hat <- mean((X5 - X4) * X3)
+# Output the computed value of d_hat
+print(d_hat)
+```
+```{r}
+# Given sigma under the null hypothesis
+sigma <- 4e-3
+
+# Compute the z-score
+z_score <- d_hat / sigma
+
+# Compute the p-value (two-tailed)
+p_value <- 2 * (1 - pnorm(abs(z_score)))
+                
+print(pnorm(abs(z_score)))
+
+# Output the p-value
+print(p_value)
+
+```
+

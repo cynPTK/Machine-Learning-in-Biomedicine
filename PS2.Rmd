@@ -1,0 +1,354 @@
+---
+title: "PS2"
+author: "Cynthia Nguyen"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(glmnet)
+```
+
+```{r}
+# Load genotype data (X)
+X_train <- read.csv("C:/Users/WINDOWS/Desktop/DSB 205/data (1)/data/pset2_Q1_data/Q1.training.csv", header=FALSE)
+X_test <- read.csv("C:/Users/WINDOWS/Desktop/DSB 205/data (1)/data/pset2_Q1_data/Q1.test.csv", header=FALSE)
+
+# Load phenotype data (y)
+y_train <- as.vector(read.table("C:/Users/WINDOWS/Desktop/DSB 205/data (1)/data/pset2_Q1_data/Q1.training.pheno", header=FALSE)$V1)
+y_test <- as.vector(read.table("C:/Users/WINDOWS/Desktop/DSB 205/data (1)/data/pset2_Q1_data/Q1.test.pheno", header=FALSE)$V1)
+```
+
+```{r}
+X_train_t <- t(X_train)
+X_test_t <- t(X_test)
+
+
+# Define lambda values
+lambda_values <- c(2,5,8)
+
+
+# Store MSE values
+mse_values <- c()
+
+# Train ridge regression and compute MSE for each lambda
+for (lambda in lambda_values) {
+  ridge_model <- glmnet(X_train_t, y_train, alpha = 0, lambda = lambda)
+  
+  # Predict on test set
+  y_pred <- predict(ridge_model, newx = X_test_t)
+  
+  # Compute MSE
+  mse <- mean((y_test - y_pred)^2)
+  mse_values <- c(mse_values, mse)
+}
+
+# Print MSE values
+mse_results <- data.frame(lambda = lambda_values, MSE = mse_values)
+print(mse_results)
+```
+
+```{r}
+# Fit OLS model using matrix notation
+ols_model <- lm(y_train ~ X_train_t)
+
+# Predict using matrix multiplication
+y_pred_ols <- predict(ols_model, newx = X_test_t)
+
+# Compute MSE for OLS
+mse_ols <- mean((y_test - y_pred_ols)^2)
+
+# Print OLS MSE
+print(paste("OLS MSE:", mse_ols))
+```
+
+```{r}
+# Plot MSE against lambda values with adjusted y-axis
+plot(lambda_values, mse_values, type="b", pch=19, col="blue",
+     xlab="Lambda", ylab="Mean Squared Error",
+     main="Ridge Regression MSE vs Lambda")  # Adjusted y-axis limits
+
+# Add a horizontal line for OLS MSE
+abline(h = mse_ols, col="red", lwd=2, lty=2)  # Dashed red line for OLS
+
+# Add a legend
+legend("topright", legend=c("Ridge Regression", "OLS"),
+       col=c("blue", "red"), pch=c(19, NA), lty=c(NA, 2), lwd=c(1, 2))
+```
+```{r}
+# Load genotype data (X)
+# Read the genotype data as a single string (each row will be a string)
+geno_data <- readLines("C:/Users/WINDOWS/Desktop/DSB 205/data (1)/data/pset2_Q2_data/hw.2-1.geno")
+
+# Split each string (genotype) by its characters
+split_geno <- strsplit(geno_data, "")
+
+# Convert the list of lists into a matrix (rows are SNPs, columns are individuals)
+p2_geno <- do.call(rbind, lapply(split_geno, function(x) as.integer(x)))
+
+# Transpose so individuals are rows and SNPs are columns (1000 × 10)
+p2_geno_t <- t(p2_geno)
+
+# Load phenotype data (y)
+p2_pheno <- as.vector(read.table("C:/Users/WINDOWS/Desktop/DSB 205/data (1)/data/pset2_Q2_data/hw.2-1.pheno", header=FALSE)$V1)
+```
+
+
+```{r}
+# Required Libraries
+library(ggplot2)
+
+sigmoid <- function(z) {
+  z <- pmax(pmin(z, 30), -30)  # Keep values within a reasonable range
+  return(1 / (1 + exp(-z)))
+}
+
+
+# Negative Log-Likelihood Function
+NLL <- function(beta, X, y) {
+  z <- X %*% beta
+  return(-sum(y * log(sigmoid(z)) + (1 - y) * log(1 - sigmoid(z))))
+}
+
+# Gradient of NLL
+gradient <- function(beta, X, y) {
+  z <- X %*% beta
+  grad <- t(X) %*% (sigmoid(z) - y)
+  return(grad)
+}
+
+# Compute the Hessian of the NLL
+hessian <- function(beta, X, y) {
+  p <- 1 / (1 + exp(-X %*% beta))  # logistic function
+  H <- t(X) %*% diag(as.vector(p * (1 - p))) %*% X  # Hessian of the NLL
+  return(H)
+}
+
+# Gradient Descent Function
+gradient_descent <- function(X, y, eta, max_iter = 50) {
+  beta <- rep(0, ncol(X))  
+  nll_values <- numeric(max_iter)
+  
+  for (t in 1:max_iter) {
+    grad <- gradient(beta, X, y)  
+    beta <- beta - eta * grad  
+    nll_values[t] <- NLL(beta, X, y)  
+  }
+  
+  return(nll_values)
+}
+
+# Newton's Method Function
+newtons_method <- function(X, y, max_iter = 50) {
+  beta <- rep(0, ncol(X))  
+  nll_values <- numeric(max_iter)
+  
+  for (t in 1:max_iter) {
+    grad <- gradient(beta, X, y)  
+    hess <- hessian(beta, X, y)  
+    
+    beta <- beta - solve(hess) %*% grad  
+    nll_values[t] <- NLL(beta, X, y)  
+  }
+  
+  return(nll_values)
+}
+
+# Load Data (Example)
+X_train <- cbind(1, p2_geno_t)  # Augment X with a column of ones
+y_train <- p2_pheno  
+
+# Initialize a plot
+lambda_values <- c(1e-1, 1e-2, 1e-3, 1e-4, 1e-5)  # Step sizes for gradient descent
+colors <- rainbow(length(lambda_values))  # Generate distinct colors
+nll_grad_desc <- list()
+nll_newtons <- numeric(50)
+
+# Run gradient descent for each eta value
+for (i in seq_along(lambda_values)) {
+  eta <- lambda_values[i]
+  nll_grad_desc[[as.character(eta)]] <- gradient_descent(X_train, y_train, eta)
+}
+
+# Run Newton's Method
+nll_newtons <- newtons_method(X_train, y_train)
+
+# Plot the results
+par(mfrow = c(1, 1))
+plot(1:50, nll_newtons[1:50], type = "l", col = "black", lwd = 2, 
+     xlab = "Iteration", ylab = "Negative Log-Likelihood", 
+     main = "NLL vs Iteration", ylim = c(100, 6000)
+)
+
+for (i in seq_along(lambda_values)) {
+  eta <- lambda_values[i]
+  lines(1:50, nll_grad_desc[[as.character(eta)]][1:50], col = colors[i], lwd = 2)
+}
+
+legend("topright", legend = c("Newton's Method", paste("GD η =", lambda_values)), 
+       col = c("black", colors), lty = 1, lwd = 3)
+```
+```{r}
+# Plot the results as points
+par(mfrow = c(1, 1))
+
+# Plot Newton's Method results as points
+plot(1:50, nll_newtons[1:50], type = "p", col = "black", pch = 16, cex = 1, 
+     xlab = "Iteration", ylab = "Negative Log-Likelihood", 
+     main = "NLL vs Iteration", ylim = c(100, 3000))
+
+# Plot Gradient Descent results as points
+for (i in seq_along(lambda_values)) {
+  eta <- lambda_values[i]
+  points(1:50, nll_grad_desc[[as.character(eta)]][1:50], col = colors[i], pch = 16, cex = 1)
+}
+
+# Add the legend
+legend("topright", legend = c("Newton's Method", paste("GD η =", lambda_values)), 
+       col = c("black", colors), pch = 16, pt.cex = 1.5, lwd = 3)
+```
+
+
+```{r}
+newtons_method_beta <- function(X, y, max_iter = 50) {
+  beta <- rep(0, ncol(X))  
+  nll_values <- numeric(max_iter)
+  
+  for (t in 1:max_iter) {
+    grad <- gradient(beta, X, y)  
+    hess <- hessian(beta, X, y)  
+    
+    # Add ridge term to avoid singularity
+    hess <- hess + diag(rep(1e-6, ncol(X)))
+    
+    beta <- beta - solve(hess) %*% grad  
+    nll_values[t] <- NLL(beta, X, y)  
+  }
+  
+  return(beta)  # Return β estimates
+}
+
+beta_estimates <- newtons_method_beta(X_train, y_train)
+
+# Extract β estimates for SNPs 1 and 7
+beta_SNP1 <- beta_estimates[2]
+beta_SNP7 <- beta_estimates[8]
+
+# Print results
+cat("β estimate for SNP 1:", beta_SNP1, "\n")
+cat("β estimate for SNP 7:", beta_SNP7, "\n")
+```
+
+```{r}
+# Load genotype data (X)
+# Read the genotype file as a single string using readr::read_table (returns tibble)
+geno_data <- readLines("C:/Users/WINDOWS/Desktop/DSB 205/data (1)/data/pset2_Q3_data/hw.2-2.geno")
+
+# Split each string (genotype) by its characters
+split_geno <- strsplit(geno_data, "")
+
+# Convert the list of lists into a matrix (rows are SNPs, columns are individuals)
+geno_matrix <- do.call(rbind, lapply(split_geno, function(x) as.integer(x)))
+p3_geno <- as.data.frame(geno_matrix)
+
+p3_geno_t <- t(p3_geno)
+
+# Load phenotype data (y)
+p3_pheno <- as.matrix(read.table("C:/Users/WINDOWS/Desktop/DSB 205/data (1)/data/pset2_Q3_data/hw.2-2.pheno", header = FALSE, sep = " "))
+```
+
+```{r}
+# Initialize an empty matrix to store p-values
+p_values <- matrix(NA, nrow = ncol(p3_geno_t), ncol = ncol(p3_pheno))
+
+# Perform linear regression for each SNP-phenotype pair
+for (i in 1:ncol(p3_pheno)) {
+  for (j in 1:ncol(p3_geno_t)) {
+    # Perform linear regression
+    model <- lm(p3_pheno[, i] ~ p3_geno_t[, j])
+    
+    # Extract p-value from the model
+    p_values[j, i] <- summary(model)$coefficients[2, 4]
+  }
+}
+```
+
+
+```{r}
+# Define significance level and Bonferroni correction
+alpha <- 0.05
+num_tests <- 382  # Total number of SNPs (tests)
+adjusted_alpha <- alpha / num_tests  # Bonferroni corrected threshold
+
+# Determine which p-values are below the significance threshold
+significant_tests <- p_values < adjusted_alpha  # Logical matrix (TRUE for significant SNPs)
+
+# Print rejected SNPs along with their p-values
+for (i in 1:ncol(p_values)) {
+  # Get indices of significant SNPs
+  rejected_snps <- which(significant_tests[, i])
+  
+  if (length(rejected_snps) > 0) {
+    cat("\nFor Phenotype", i, "the following SNPs are rejected (significant):\n")
+    
+    # Extract significant SNPs and their p-values
+    rejected_pvals <- p_values[rejected_snps, i]
+    
+    # Sort by p-value (smallest first)
+    sorted_indices <- order(rejected_pvals)
+    
+    for (j in sorted_indices) {
+      cat("SNP", rejected_snps[j], "-> p-value:", format(rejected_pvals[j], scientific = TRUE), "\n")
+    }
+  } else {
+    cat("\nFor Phenotype", i, "no SNPs are rejected.\n")
+  }
+}
+```
+
+```{r, fig.height=15, fig.width=30}
+# Set layout for Q-Q plots and histograms
+par(mfrow = c(2, ncol(p3_pheno)))  # Two rows: one for Q-Q plots, one for histograms
+
+for (i in 1:ncol(p3_pheno)) {
+  # Q-Q plot for p-values of each phenotype
+  qqnorm(p_values[, i], main = paste("Q-Q plot for Phenotype", i))
+  qqline(p_values[, i], col = "red")
+  
+  # Histogram to check uniformity of p-values
+  hist(p_values[, i], breaks = 20, main = paste("Histogram of p-values for Phenotype", i),
+       xlab = "p-value", col = "lightblue", border = "black", freq = TRUE)
+}
+```
+
+```{r, fig.height=15}
+# Set significance threshold
+significant_snps <- which(p_values < adjusted_alpha, arr.ind = TRUE)  # Get row (SNP) and column (phenotype) indices
+
+# Create plots for each significant SNP-phenotype pair
+par(mfrow = c(2, 2))  # Set layout for multiple plots
+
+for (k in 1:nrow(significant_snps)) {
+  snp_idx <- significant_snps[k, 1]  # SNP index
+  pheno_idx <- significant_snps[k, 2]  # Phenotype index
+  
+  # Extract relevant genotype and phenotype data
+  genotype <- p3_geno_t[, snp_idx]  # SNP genotype (0,1,2)
+  phenotype <- p3_pheno[, pheno_idx]  # Phenotype values
+  
+  # Boxplot
+  boxplot(phenotype ~ genotype, main = paste("Phenotype", pheno_idx, "vs SNP", snp_idx),
+          xlab = "Genotype (0,1,2)", ylab = "Phenotype", col = c("red", "blue", "green"))
+  
+  # Scatterplot with jittering
+  plot(jitter(genotype), phenotype, main = paste("Scatterplot: Phenotype", pheno_idx, "vs SNP", snp_idx),
+       xlab = "Genotype (Jittered)", ylab = "Phenotype", pch = 16, col = "blue")
+  
+  # Check for model violations
+  if (length(unique(genotype)) < 3) {
+    print(paste("Potential model issue: SNP", snp_idx, "has less than 3 unique genotype values."))
+  }
+}
+```
+
